@@ -1,59 +1,93 @@
-name: Build WSA
+name: Auto Build function (Use for call only)
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       arch:
-        description: "Architecture (x64 hoặc arm64)"
-        required: false
-        default: "x64"
+        type: string
+      gapps:
+        type: string
       root:
-        description: "Root (true/false)"
-        required: false
-        default: "false"
+        type: string
+      release_type:
+        type: string
 
 jobs:
   build:
+    name: Build WSA
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      - name: Checkout ♻️
+        uses: actions/checkout@v4
 
-      - name: Setup Python3 Virtual Environment
+      - name: Setup Python 🏭
+        uses: actions/setup-python@v5
+        with:
+          check-latest: true
+          python-version: '3.10'
+          cache: 'pip'
+          cache-dependency-path: scripts/
+
+      - name: Setup Python3 Virtual Enviroment 🐍
         working-directory: scripts
         run: |
           sudo apt-get update
           PYTHON_VENV_DIR="$(dirname "$PWD")/python3-env"
-          python3 -m venv "$PYTHON_VENV_DIR" || abort "Failed to create python3 virtual env"
-          source "$PYTHON_VENV_DIR/bin/activate" || abort "Failed to activate python3 virtual env"
-          python3 -c "import pkg_resources; pkg_resources.require(open('requirements.txt',mode='r'))" >/dev/null 2>&1 || {
-            echo "Installing Python3 dependencies"
-            python3 -m pip install --upgrade -r requirements.txt || abort "Failed to install python3 dependencies"
-          }
+          python3 -m venv "$PYTHON_VENV_DIR"
+          source "$PYTHON_VENV_DIR/bin/activate"
+          python3 -m pip install --upgrade -r requirements.txt
           deactivate
 
-      - name: Install Ubuntu Dependencies
+      - name: Install Ubuntu Dependencies 🧑‍🏭
         uses: awalsh128/cache-apt-pkgs-action@v1
         with:
-          packages: e2fsprogs attr unzip qemu-utils python3-venv
+          packages: e2fsprogs attr unzip qemu-utils python3-venv p7zip-full
           version: 1.0
 
-      - name: Build WSA
+      - name: Debug check scripts folder 🔎
         run: |
-          ARCH="${{ github.event.inputs.arch }}"
-          ROOT="${{ github.event.inputs.root }}"
+          ls -l ./scripts
+          chmod +x ./scripts/*.sh || true
 
-          # Nếu ARCH trống thì gán mặc định x64
-          if [ -z "$ARCH" ]; then
-            ARCH="x64"
+      - name: Build WSA ${{ inputs.arch }} with GApps ${{ inputs.root }} 🏗️
+        id: wsa
+        run: |
+          if [[ "${{ inputs.release_type }}" == "WIF" ]]; then
+              RLS_TYPE="latest"
+          else
+              RLS_TYPE="retail"
           fi
 
-          # Nếu ROOT trống thì gán mặc định false
-          if [ -z "$ROOT" ]; then
-            ROOT="false"
+          if [[ "${{ inputs.gapps }}" == "MindTheGapps" ]]; then
+              WITH_GAPPS="--install-gapps"
+          else
+              WITH_GAPPS=""
           fi
 
-          echo ">>> Building WSA for $ARCH with GApps (Root=$ROOT)"
-          ./scripts/build.sh --arch "$ARCH" --gapps --root "$ROOT"
+          mkdir -p download
 
+          if [[ "${{ inputs.root }}" == *magisk* ]]; then
+              bash ./scripts/build_with_lspinit.sh --arch ${{ inputs.arch }} --release-type $RLS_TYPE --magisk-branch topjohnwu --magisk-ver stable $WITH_GAPPS --root-sol ${{ inputs.root }} --remove-amazon --compress-format 7z
+          else
+              bash ./scripts/build_with_mount.sh --arch ${{ inputs.arch }} --release-type $RLS_TYPE --magisk-branch topjohnwu --magisk-ver stable $WITH_GAPPS --root-sol ${{ inputs.root }} --remove-amazon --compress-format 7z
+          fi
+  
+      - name: Pass to Windows 💸
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.wsa.outputs.artifact }}-${{ steps.wsa.outputs.built }}
+          path: output
+
+      - name: Prepare release tag 🏷️
+        id: date
+        run: |
+           if [[ "${{ inputs.release_type }}" == "WIF" ]]; then
+              echo "date=WSA-Insider-Version" >> $GITHUB_OUTPUT
+           else
+              echo "date=$(date +'v%Y-%m-%d')" >> $GITHUB_OUTPUT
+           fi
+
+    outputs:
+      zipname: ${{ steps.wsa.outputs.artifact }}
+      date: ${{ steps.date.outputs.date }}
+      built: ${{ steps.wsa.outputs.built }}
