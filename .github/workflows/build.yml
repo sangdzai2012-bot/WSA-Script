@@ -82,5 +82,21 @@ jobs:
           packages: e2fsprogs attr unzip qemu-utils python3-venv
           version: 1.0
 
-      - name: Build WSA ${{ github.event.inputs.arch || inputs.arch }} with GApps ${{ github.event.inputs.root || input
+     - name: Build WSA
+    run: |
+      ARCH="${{ github.event.inputs.arch }}"
+      ROOT="${{ github.event.inputs.root }}"
+
+      # Nếu không có input thì dùng mặc định
+      if [ -z "$ARCH" ]; then
+        ARCH="x64"
+      fi
+      if [ -z "$ROOT" ]; then
+        ROOT="false"
+      fi
+
+      echo ">>> Building WSA for $ARCH with GApps (Root=$ROOT)"
+      # Gọi script build chính
+      ./scripts/build.sh --arch "$ARCH" --gapps --root "$ROOT"
+
 
